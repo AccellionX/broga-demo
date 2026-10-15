@@ -11,7 +11,7 @@ import {
   Apple,
 } from "lucide-react";
 import type { Course, ProductType, Venue } from "@/lib/mock-data";
-import { PRODUCTS, getTeacher } from "@/lib/mock-data";
+import { PRODUCTS, getTeacher, isMonthlyProduct } from "@/lib/mock-data";
 import { formatGBP, cn } from "@/lib/utils";
 import { useDemo } from "@/lib/demo-context";
 import { Button } from "@/components/ui/button";
@@ -254,13 +254,13 @@ export function BookingFlow({ course, venue }: Props) {
                 <div>
                   <div className="flex items-center gap-2">
                     <p className="font-bold">{p.name}</p>
-                    {p.popular && <Badge variant="accent">Popular</Badge>}
+                    {p.badge && <Badge variant="accent">{p.badge}</Badge>}
                   </div>
                   <p className="mt-1 text-sm text-charcoal/60">{p.description}</p>
                 </div>
                 <p className="shrink-0 text-lg font-extrabold text-forest-800">
                   {formatGBP(p.pricePence)}
-                  {p.id === "membership" && (
+                  {isMonthlyProduct(p.id) && (
                     <span className="text-xs font-medium text-charcoal/50">
                       /mo
                     </span>
@@ -345,6 +345,11 @@ export function BookingFlow({ course, venue }: Props) {
                 </span>
                 <span className="text-xl font-extrabold text-forest-800">
                   {formatGBP(product.pricePence)}
+                  {isMonthlyProduct(product.id) && (
+                    <span className="text-sm font-medium text-charcoal/50">
+                      /mo
+                    </span>
+                  )}
                 </span>
               </CardTitle>
             </CardHeader>

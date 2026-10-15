@@ -130,7 +130,7 @@ export default function VenuePage({ params }: { params: { slug: string } }) {
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <Badge variant="accent" className="mb-2">
-                      Beginner course
+                      Start here
                     </Badge>
                     <CardTitle>{trial.name}</CardTitle>
                   </div>

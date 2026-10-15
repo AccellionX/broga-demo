@@ -15,10 +15,10 @@ export type DayOfWeek =
 export type TimeSlot = "morning" | "evening";
 export type ProductType =
   | "trial"
-  | "pack5"
+  | "gold"
+  | "platinum"
   | "pack10"
-  | "dropin"
-  | "membership";
+  | "dropin";
 export type CustomerStatus =
   | "lead"
   | "trial"
@@ -26,7 +26,12 @@ export type CustomerStatus =
   | "member"
   | "lapsed"
   | "churned";
+export type MembershipTier = "gold" | "platinum";
 export type Role = "customer" | "teacher" | "owner";
+
+export function isMonthlyProduct(id: ProductType): boolean {
+  return id === "gold" || id === "platinum";
+}
 
 export interface Teacher {
   id: string;
@@ -130,7 +135,9 @@ export interface Product {
   description: string;
   pricePence: number;
   popular?: boolean;
+  ctaLabel?: string;
   perClassHint?: string;
+  badge?: string;
 }
 
 // ── Seeded PRNG (mulberry32) ──────────────────────────────────────────
@@ -150,43 +157,54 @@ const randInt = (min: number, max: number) =>
 
 // ── Static reference data ─────────────────────────────────────────────
 
+/** Real Bro-ga plan prices (GBP). PAYG single-class rate is a demo estimate (not listed publicly). */
 export const PRODUCTS: Product[] = [
   {
     id: "trial",
-    name: "5-week beginner course",
-    description: "Your first proper run at yoga. Same hall, same teacher, every week.",
-    pricePence: 6500,
-    perClassHint: "£13/class",
+    name: "5-week beginner trial",
+    description:
+      "Five consecutive classes, a new mat, and a cold beer after each session. The proper way to start.",
+    pricePence: 7900,
+    popular: true,
+    badge: "Start here",
+    ctaLabel: "Book trial",
+    perClassHint: "£15.80/class",
   },
   {
-    id: "pack5",
-    name: "5-class pack",
-    description: "Flexible drop-in credits. Use within 3 months.",
-    pricePence: 5500,
-    perClassHint: "£11/class",
+    id: "gold",
+    name: "Gold membership",
+    description:
+      "One session a week at any venue. 6-month initial commitment, then rolling monthly.",
+    pricePence: 5900,
+    perClassHint: "£59/mo",
+  },
+  {
+    id: "platinum",
+    name: "Platinum membership",
+    description:
+      "Unlimited sessions across all venues. 6-month initial commitment, then rolling monthly.",
+    pricePence: 8900,
+    perClassHint: "£89/mo",
   },
   {
     id: "pack10",
     name: "10-class pack",
-    description: "Best value if you come regularly but skip the membership.",
-    pricePence: 9500,
-    perClassHint: "£9.50/class",
+    description: "Ten classes at any Bro-ga venue. Use within 17 weeks.",
+    pricePence: 16500,
+    perClassHint: "£16.50/class",
   },
   {
     id: "dropin",
-    name: "Pay-as-you-go drop-in",
-    description: "One class, no commitment. Great for trying a new venue.",
-    pricePence: 1400,
-  },
-  {
-    id: "membership",
-    name: "Monthly membership",
-    description: "Unlimited classes at any Bro-ga venue. Cancel anytime.",
-    pricePence: 4900,
-    popular: true,
-    perClassHint: "from £49/mo",
+    name: "Pay-as-you-go",
+    description: "Single class at any venue. No commitment.",
+    pricePence: 2000,
+    perClassHint: "£20/class",
   },
 ];
+
+export const PRODUCT_BY_ID = Object.fromEntries(
+  PRODUCTS.map((p) => [p.id, p])
+) as Record<ProductType, Product>;
 
 export const POSTCODE_COORDS: Record<string, { lat: number; lng: number; label: string }> = {
   GU7: { lat: 51.1858, lng: -0.612, label: "Godalming" },
@@ -364,7 +382,7 @@ export const COURSES: Course[] = VENUES.flatMap((venue, i) => {
     startDate,
     spacesLeft,
     capacity: venue.capacity,
-    pricePence: 6500,
+    pricePence: PRODUCT_BY_ID.trial.pricePence,
     dayOfWeek: venue.dayOfWeek,
     time: venue.time,
   });
@@ -377,7 +395,7 @@ export const COURSES: Course[] = VENUES.flatMap((venue, i) => {
     startDate: addDays(TODAY, -((i % 7) + 1)),
     spacesLeft: randInt(3, 10),
     capacity: venue.capacity,
-    pricePence: 1400,
+    pricePence: PRODUCT_BY_ID.dropin.pricePence,
     dayOfWeek: venue.dayOfWeek,
     time: venue.time,
   });
@@ -461,40 +479,101 @@ export const DEMO_CUSTOMER: Customer = {
   joinedAt: addDays(TODAY, -21),
 };
 
-// ── Revenue (12 months, upward trend) ─────────────────────────────────
+// ── Revenue (12 months, upward trend) from real plan prices ───────────
+
+const GOLD_PRICE = PRODUCT_BY_ID.gold.pricePence;
+const PLAT_PRICE = PRODUCT_BY_ID.platinum.pricePence;
+const TRIAL_PRICE = PRODUCT_BY_ID.trial.pricePence;
+const PACK_PRICE = PRODUCT_BY_ID.pack10.pricePence;
+const DROPIN_PRICE = PRODUCT_BY_ID.dropin.pricePence;
+
+/** ~70% Gold / 30% Platinum split of active members */
+function memberSplit(totalMembers: number) {
+  const gold = Math.round(totalMembers * 0.7);
+  return { gold, platinum: totalMembers - gold };
+}
+
+function monthRevenuePence(
+  members: number,
+  trialsSold: number,
+  packsSold: number,
+  dropinsSold: number
+) {
+  const { gold, platinum } = memberSplit(members);
+  return (
+    gold * GOLD_PRICE +
+    platinum * PLAT_PRICE +
+    trialsSold * TRIAL_PRICE +
+    packsSold * PACK_PRICE +
+    dropinsSold * DROPIN_PRICE
+  );
+}
 
 export const MONTHLY_REVENUE: MonthlyRevenue[] = Array.from({ length: 12 }, (_, i) => {
   const d = new Date(2025, 4 + i, 1); // May 2025 → Apr 2026
-  const base = 820000 + i * 95000 + randInt(-20000, 40000);
+  const members = 160 + i * 14 + randInt(-4, 6);
+  const trials = 38 + i * 3 + randInt(-2, 4);
+  const packs = 12 + Math.floor(i * 0.8) + randInt(0, 3);
+  const dropins = 55 + i * 4 + randInt(-5, 8);
   return {
     month: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
-    revenuePence: base,
-    members: 180 + i * 12 + randInt(-5, 8),
-    trials: 40 + i * 3 + randInt(-3, 6),
+    revenuePence: monthRevenuePence(members, trials, packs, dropins),
+    members,
+    trials,
   };
 });
 
-export const KPI = {
-  activeMembers: MONTHLY_REVENUE[11].members,
-  mrrPence: 49_00 * MONTHLY_REVENUE[11].members, // rough
-  trialConversion: 0.42,
-  classesThisWeek: 23,
-  avgAttendance: 0.72,
-  revenueThisMonthPence: MONTHLY_REVENUE[11].revenuePence,
+const latest = MONTHLY_REVENUE[11];
+const { gold: goldMembers, platinum: platinumMembers } = memberSplit(
+  latest.members
+);
+
+export const MEMBERSHIP_COUNTS = {
+  gold: goldMembers,
+  platinum: platinumMembers,
 };
 
-export const REVENUE_BY_PRODUCT = [
-  { product: "Membership", revenuePence: 980000 },
-  { product: "Trial course", revenuePence: 420000 },
-  { product: "Class packs", revenuePence: 310000 },
-  { product: "Drop-in", revenuePence: 145000 },
-];
-
 export const FUNNEL = [
-  { stage: "Booked", count: 320 },
+  { stage: "Trial booked", count: 320 },
   { stage: "Attended wk1", count: 280 },
   { stage: "Completed wk5", count: 210 },
-  { stage: "Converted", count: 134 },
+  { stage: "Converted to member", count: 134 },
+];
+
+export const KPI = {
+  activeMembers: latest.members,
+  goldMembers,
+  platinumMembers,
+  mrrPence: goldMembers * GOLD_PRICE + platinumMembers * PLAT_PRICE,
+  trialConversion: FUNNEL[3].count / FUNNEL[0].count,
+  classesThisWeek: 23,
+  avgAttendance: 0.72,
+  revenueThisMonthPence: latest.revenuePence,
+  trialsSoldThisMonth: latest.trials,
+};
+
+/** This month's revenue mix, priced from live PRODUCTS */
+export const REVENUE_BY_PRODUCT = [
+  {
+    product: "Gold membership",
+    revenuePence: goldMembers * GOLD_PRICE,
+  },
+  {
+    product: "Platinum membership",
+    revenuePence: platinumMembers * PLAT_PRICE,
+  },
+  {
+    product: "5-week trial",
+    revenuePence: latest.trials * TRIAL_PRICE,
+  },
+  {
+    product: "10-class pack",
+    revenuePence: 18 * PACK_PRICE,
+  },
+  {
+    product: "Pay-as-you-go",
+    revenuePence: 72 * DROPIN_PRICE,
+  },
 ];
 
 // ── Testimonials & FAQ ────────────────────────────────────────────────
@@ -535,7 +614,7 @@ export const FAQS = [
   },
   {
     q: "Can I try one class before committing?",
-    a: "Yes. Drop-in is £14. Or jump on the 5-week course if you want the proper start.",
+    a: "Yes. Pay-as-you-go is £20 a class. Or jump on the £79 five-week trial if you want the proper start.",
   },
   {
     q: "What if I miss a week on the trial?",
